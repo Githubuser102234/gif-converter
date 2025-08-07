@@ -18,7 +18,7 @@
             align-items: center;
             min-height: 100vh;
         }
-        
+
         .container {
             width: 100%;
             max-width: 500px;
@@ -63,7 +63,7 @@
             cursor: pointer;
             transition: background-color 0.2s ease-in-out;
         }
-        
+
         button:hover {
             background-color: #0056b3;
         }
@@ -73,7 +73,7 @@
             margin-bottom: 8px;
             font-weight: 500;
         }
-        
+
         #shareable-link {
             word-break: break-all;
             background-color: #f0f4f7;
@@ -93,7 +93,7 @@
             color: #007bff;
             text-decoration: none;
         }
-        
+
         a:hover {
             text-decoration: underline;
         }
@@ -144,7 +144,8 @@
         // Replace with your Supabase project URL and anon key
         const supabaseUrl = 'https://sarbeabfdlskvleyjbnd.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhcmJlYWJmZGxza3ZsZXlqYm5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2MDUzMzgsImV4cCI6MjA3MDE4MTMzOH0.P_Q4zFN8qOWRbR5kvTZ6eAKIhFk5VDwx6RL8KvtCd_Y';
-        const supabase = supabase_js.createClient(supabaseUrl, supabaseKey);
+        // Correct initialization of the Supabase client
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
         const uploaderSection = document.getElementById('uploader');
         const sharerSection = document.getElementById('sharer');
