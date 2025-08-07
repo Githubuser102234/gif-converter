@@ -18,7 +18,7 @@
             align-items: center;
             min-height: 100vh;
         }
-        
+
         .container {
             width: 100%;
             max-width: 500px;
@@ -63,11 +63,11 @@
             cursor: pointer;
             transition: background-color 0.2s ease-in-out;
         }
-        
+
         button:hover {
             background-color: #0056b3;
         }
-        
+
         .delete-button {
             background-color: #dc3545;
         }
@@ -81,7 +81,7 @@
             margin-bottom: 8px;
             font-weight: 500;
         }
-        
+
         #shareable-link {
             word-break: break-all;
             background-color: #f0f4f7;
@@ -101,11 +101,11 @@
             color: #007bff;
             text-decoration: none;
         }
-        
+
         a:hover {
             text-decoration: underline;
         }
-        
+
         #file-viewer img, #file-viewer video, #file-viewer audio {
             max-width: 100%;
             height: auto;
@@ -149,7 +149,7 @@
     </div>
 
     <div class="container hidden" id="viewer">
-        <h2>File Information</h2>
+        <h2 id="viewer-filename">File Information</h2>
         <div id="file-viewer"></div>
         <p><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
         <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
@@ -177,8 +177,8 @@
         const expirationSelect = document.getElementById('expiration-date');
         const uploadStatus = document.getElementById('upload-status');
         const shareableLinkDiv = document.getElementById('shareable-link');
-        const downloadLink = document.getElementById('download-link');
         const fileViewerDiv = document.getElementById('file-viewer');
+        const viewerFilenameH2 = document.getElementById('viewer-filename');
         const viewerExpiresSpan = document.getElementById('viewer-expires');
         const viewerUploadedSpan = document.getElementById('viewer-uploaded');
         const deleteFileButton = document.getElementById('delete-file-button');
@@ -194,11 +194,13 @@
 
             uploadStatus.innerText = 'Uploading...';
 
-            const fileId = `${self.crypto.randomUUID()}-${file.name}`;
+            // Generate a UUID for the file
+            const fileId = self.crypto.randomUUID();
             const expirationSeconds = parseInt(expirationSelect.value, 10);
             const uploadTime = new Date().toISOString();
 
             try {
+                // Upload file to Supabase Storage with the UUID as the filename
                 const { error: uploadError } = await supabase.storage
                     .from('files')
                     .upload(fileId, file);
@@ -207,11 +209,13 @@
                     throw uploadError;
                 }
 
+                // Insert into shared_files table with the file name
                 const { data, error: dbError } = await supabase
                     .from('shared_files')
                     .insert([
                         {
                             file_id: fileId,
+                            file_name: file.name,
                             expires_at: new Date(Date.now() + expirationSeconds * 1000).toISOString(),
                             created_at: uploadTime,
                         },
@@ -254,7 +258,7 @@
                         .single();
 
                     if (error || !data || new Date(data.expires_at) < new Date()) {
-                        viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired. It may have been deleted.</p>`;
+                        viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
 
@@ -265,18 +269,20 @@
                     if (signedUrlError) {
                         throw signedUrlError;
                     }
-                    
-                    const signedUrl = signedUrlData.signedUrl;
 
+                    const signedUrl = signedUrlData.signedUrl;
+                    const fileName = data.file_name;
+
+                    viewerFilenameH2.innerText = `File: ${fileName}`;
                     viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
                     viewerUploadedSpan.innerText = new Date(data.created_at).toLocaleString();
-                    
-                    const fileExtension = fileId.split('.').pop().toLowerCase();
+
+                    const fileExtension = fileName.split('.').pop().toLowerCase();
                     let mediaElement = '';
-                    
-                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-                    const videoExtensions = ['mp4', 'webm', 'ogg'];
-                    const audioExtensions = ['mp3', 'wav', 'ogg'];
+
+                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp'];
+                    const videoExtensions = ['mp4', 'webm', 'ogg', 'mov', 'avi'];
+                    const audioExtensions = ['mp3', 'wav', 'ogg', 'm4a', 'flac'];
 
                     if (imageExtensions.includes(fileExtension)) {
                         mediaElement = `<img src="${signedUrl}" alt="Shared File">`;
@@ -285,7 +291,7 @@
                     } else if (audioExtensions.includes(fileExtension)) {
                         mediaElement = `<audio controls src="${signedUrl}" type="audio/${fileExtension}"></audio>`;
                     } else {
-                        mediaElement = `<p>File preview not available. <a href="${signedUrl}" download>Click here to download.</a></p>`;
+                        mediaElement = `<p>File preview not available. <a href="${signedUrl}" download="${fileName}">Click here to download.</a></p>`;
                     }
 
                     fileViewerDiv.innerHTML = mediaElement;
@@ -300,7 +306,7 @@
 
                 } catch (error) {
                     console.error('File view error:', error);
-                    viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired. It may have been deleted.</p>`;
+                    viewerSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file. It may have been deleted or the link is invalid.</p>`;
                 }
             }
         }
@@ -338,7 +344,7 @@
                 let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                 ownedFiles = ownedFiles.filter(id => id !== fileId);
                 localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
-                
+
                 alert('File deleted successfully!');
                 window.location.href = SHARE_BASE_URL;
 
