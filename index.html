@@ -1,170 +1,48 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Upload Video & Convert to GIF</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-      background: #f9f9f9;
-      max-width: 600px;
-      margin: auto;
-    }
-    input, button {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      margin: 10px 0;
-      box-sizing: border-box;
-    }
-    button {
-      background: #007bff;
-      color: white;
-      border: none;
-      cursor: pointer;
-    }
-    #status, #error {
-      margin-top: 10px;
-      text-align: center;
-    }
-    #error {
-      color: red;
-      white-space: pre-wrap;
-    }
-    #outputGif {
-      max-width: 100%;
-      margin-top: 15px;
-      display: none;
-    }
-    #downloadGif {
-      display: none;
-      text-align: center;
-      margin-top: 10px;
-      display: block;
-      color: #007bff;
-      text-decoration: underline;
-    }
-    a.videoLink {
-      display: block;
-      text-align: center;
-      margin-top: 10px;
-      word-break: break-all;
-    }
-  </style>
+    <title>Simple File Sharing</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; line-height: 1.6; }
+        .container { padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        .hidden { display: none; }
+        input[type="file"], select, button { margin-bottom: 10px; padding: 8px; font-size: 16px; width: 100%; box-sizing: border-box; }
+        #shareable-link { word-break: break-all; background: #f0f0f0; padding: 10px; border-radius: 4px; }
+    </style>
 </head>
 <body>
-  <h2>Upload Video and Convert to GIF</h2>
 
-  <input type="file" id="videoInput" accept="video/*">
-  <button id="uploadBtn">Upload to Supabase</button>
-  <button id="convertBtn">Convert to GIF</button>
+    <div class="container" id="uploader">
+        <h1>Upload a File</h1>
+        <form id="upload-form">
+            <input type="file" id="file-input" required />
+            <label for="expiration-date">Auto-Expiration:</label>
+            <select id="expiration-date">
+                <option value="3600">1 Hour</option>
+                <option value="21600">6 Hours</option>
+                <option value="86400">1 Day</option>
+                <option value="259200">3 Days</option>
+                <option value="604800">7 Days</option>
+            </select>
+            <button type="submit">Upload File</button>
+        </form>
+        <p id="upload-status"></p>
+    </div>
 
-  <p id="status"></p>
-  <p id="error"></p>
+    <div class="container hidden" id="sharer">
+        <h2>Your File is Ready!</h2>
+        <p>Share this link:</p>
+        <div id="shareable-link"></div>
+        <button onclick="copyLink()">Copy Link</button>
+    </div>
 
-  <a class="videoLink" id="videoLink" target="_blank"></a>
-  <img id="outputGif">
-  <a id="downloadGif" download="converted.gif">Download GIF</a>
+    <div class="container hidden" id="downloader">
+        <h2>File Download</h2>
+        <p>Please wait, your download should start automatically.</p>
+        <p>If not, <a id="download-link" href="#">click here</a>.</p>
+    </div>
 
-  <!-- Supabase client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
-
-  <!-- FFmpeg -->
-  <script type="module">
-    import { createFFmpeg, fetchFile } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/esm/index.js';
-
-    const ffmpeg = createFFmpeg({ log: true });
-    const supabase = supabase.createClient('https://sarbeabfdlskvleyjbnd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhcmJlYWJmZGxza3ZsZXlqYm5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2MDUzMzgsImV4cCI6MjA3MDE4MTMzOH0.P_Q4zFN8qOWRbR5kvTZ6eAKIhFk5VDwx6RL8KvtCd_Y');
-
-    const input = document.getElementById('videoInput');
-    const uploadBtn = document.getElementById('uploadBtn');
-    const convertBtn = document.getElementById('convertBtn');
-    const status = document.getElementById('status');
-    const error = document.getElementById('error');
-    const outputGif = document.getElementById('outputGif');
-    const downloadLink = document.getElementById('downloadGif');
-    const videoLink = document.getElementById('videoLink');
-
-    let selectedFile = null;
-
-    input.addEventListener('change', (e) => {
-      selectedFile = e.target.files[0];
-      status.textContent = '';
-      error.textContent = '';
-      outputGif.style.display = 'none';
-      downloadLink.style.display = 'none';
-      videoLink.textContent = '';
-    });
-
-    uploadBtn.addEventListener('click', async () => {
-      error.textContent = '';
-      status.textContent = '';
-
-      if (!selectedFile) {
-        error.textContent = '❌ No video file selected.';
-        return;
-      }
-
-      try {
-        const fileExt = selectedFile.name.split('.').pop();
-        const filePath = `${Date.now()}.${fileExt}`;
-
-        status.textContent = '📤 Uploading to Supabase...';
-        const { data, error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(filePath, selectedFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage
-          .from('videos')
-          .getPublicUrl(filePath);
-
-        if (!publicUrlData?.publicUrl) throw new Error('Failed to get public URL.');
-
-        videoLink.href = publicUrlData.publicUrl;
-        videoLink.textContent = '🎬 View uploaded video';
-        status.textContent = '✅ Upload successful!';
-      } catch (err) {
-        console.error(err);
-        error.textContent = `❌ Upload failed: ${err.message || err}`;
-      }
-    });
-
-    convertBtn.addEventListener('click', async () => {
-      error.textContent = '';
-      status.textContent = '';
-
-      if (!selectedFile) {
-        error.textContent = '❌ No video file selected.';
-        return;
-      }
-
-      try {
-        status.textContent = '⚙️ Loading FFmpeg...';
-        if (!ffmpeg.isLoaded()) await ffmpeg.load();
-
-        status.textContent = '🎞️ Converting to GIF...';
-        ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(selectedFile));
-        await ffmpeg.run('-i', 'input.mp4', '-vf', 'fps=10,scale=320:-1:flags=lanczos', 'output.gif');
-        const data = ffmpeg.FS('readFile', 'output.gif');
-
-        const blob = new Blob([data.buffer], { type: 'image/gif' });
-        const url = URL.createObjectURL(blob);
-
-        outputGif.src = url;
-        outputGif.style.display = 'block';
-        downloadLink.href = url;
-        downloadLink.style.display = 'block';
-        status.textContent = '✅ Conversion done!';
-      } catch (err) {
-        console.error(err);
-        error.textContent = `❌ Conversion failed: ${err.message || err}`;
-        status.textContent = '';
-      }
-    });
-  </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
 </body>
 </html>
