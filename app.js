@@ -1,6 +1,6 @@
 // Replace with your Supabase project URL and anon key
-const supabaseUrl = 'YOUR_SUPABASE_URL';
-const supabaseKey = 'YOUR_ANON_KEY';
+const supabaseUrl = 'https://sarbeabfdlskvleyjbnd.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhcmJlYWJmZGxza3ZsZXlqYm5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2MDUzMzgsImV4cCI6MjA3MDE4MTMzOH0.P_Q4zFN8qOWRbR5kvTZ6eAKIhFk5VDwx6RL8KvtCd_Y';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const uploaderSection = document.getElementById('uploader');
