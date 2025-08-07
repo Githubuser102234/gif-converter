@@ -1,13 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple File Sharing</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; line-height: 1.6; }
-        .container { padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
-        .hidden { display: none; }
-        input[type="file"], select, button { margin-bottom: 10px; padding: 8px; font-size: 16px; width: 100%; box-sizing: border-box; }
-        #shareable-link { word-break: break-all; background: #f0f0f0; padding: 10px; border-radius: 4px; }
+        /* Mobile-first styles */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f7f7f7;
+            color: #333;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background-color: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #1a1a1a;
+            margin-top: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        input[type="file"], select, button {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        input[type="file"] {
+            background-color: #f9f9f9;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        #shareable-link {
+            word-break: break-all;
+            background-color: #f0f4f7;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        #upload-status {
+            text-align: center;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+
+        @media (min-width: 600px) {
+            body {
+                padding: 40px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -15,7 +110,9 @@
     <div class="container" id="uploader">
         <h1>Upload a File</h1>
         <form id="upload-form">
+            <label for="file-input">Choose your file:</label>
             <input type="file" id="file-input" required />
+
             <label for="expiration-date">Auto-Expiration:</label>
             <select id="expiration-date">
                 <option value="3600">1 Hour</option>
@@ -43,6 +140,114 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js"></script>
+    <script>
+        // Replace with your Supabase project URL and anon key
+        const supabaseUrl = 'YOUR_SUPABASE_URL';
+        const supabaseKey = 'YOUR_ANON_KEY';
+        const supabase = supabase_js.createClient(supabaseUrl, supabaseKey);
+
+        const uploaderSection = document.getElementById('uploader');
+        const sharerSection = document.getElementById('sharer');
+        const downloaderSection = document.getElementById('downloader');
+        const uploadForm = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const expirationSelect = document.getElementById('expiration-date');
+        const uploadStatus = document.getElementById('upload-status');
+        const shareableLinkDiv = document.getElementById('shareable-link');
+        const downloadLink = document.getElementById('download-link');
+
+        async function handleUpload(event) {
+            event.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) {
+                uploadStatus.innerText = 'Please select a file.';
+                return;
+            }
+
+            uploadStatus.innerText = 'Uploading...';
+
+            const fileId = self.crypto.randomUUID();
+            const expirationSeconds = parseInt(expirationSelect.value, 10);
+
+            try {
+                const { error: uploadError } = await supabase.storage
+                    .from('files')
+                    .upload(fileId, file);
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
+                const { data, error: dbError } = await supabase
+                    .from('shared_files')
+                    .insert([
+                        {
+                            file_id: fileId,
+                            expires_at: new Date(Date.now() + expirationSeconds * 1000).toISOString(),
+                        },
+                    ]);
+
+                if (dbError) {
+                    throw dbError;
+                }
+
+                uploaderSection.classList.add('hidden');
+                sharerSection.classList.remove('hidden');
+
+                const shareLink = `${window.location.origin}/?fileid=${fileId}`;
+                shareableLinkDiv.innerText = shareLink;
+                uploadStatus.innerText = '';
+            } catch (error) {
+                uploadStatus.innerText = `Error: ${error.message}`;
+                console.error('Upload error:', error);
+            }
+        }
+
+        async function handleDownload() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileId = urlParams.get('fileid');
+
+            if (fileId) {
+                uploaderSection.classList.add('hidden');
+                downloaderSection.classList.remove('hidden');
+
+                try {
+                    const { data, error } = await supabase
+                        .from('shared_files')
+                        .select('expires_at')
+                        .eq('file_id', fileId)
+                        .single();
+
+                    if (error || !data || new Date(data.expires_at) < new Date()) {
+                        downloaderSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired.</p>`;
+                        return;
+                    }
+
+                    const { data: { signedUrl }, error: signedUrlError } = await supabase.storage
+                        .from('files')
+                        .createSignedUrl(fileId, 60);
+
+                    if (signedUrlError) {
+                        throw signedUrlError;
+                    }
+
+                    downloadLink.href = signedUrl;
+                    window.location.href = signedUrl;
+                } catch (error) {
+                    console.error('Download error:', error);
+                    downloaderSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file.</p>`;
+                }
+            }
+        }
+
+        function copyLink() {
+            navigator.clipboard.writeText(shareableLinkDiv.innerText).then(() => {
+                alert('Link copied to clipboard!');
+            });
+        }
+
+        uploadForm.addEventListener('submit', handleUpload);
+        window.addEventListener('DOMContentLoaded', handleDownload);
+    </script>
 </body>
 </html>
