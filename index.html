@@ -106,7 +106,7 @@
             text-decoration: underline;
         }
         
-        #file-viewer img, #file-viewer video {
+        #file-viewer img, #file-viewer video, #file-viewer audio {
             max-width: 100%;
             height: auto;
             margin-top: 20px;
@@ -194,7 +194,7 @@
 
             uploadStatus.innerText = 'Uploading...';
 
-            const fileId = self.crypto.randomUUID();
+            const fileId = `${self.crypto.randomUUID()}-${file.name}`;
             const expirationSeconds = parseInt(expirationSelect.value, 10);
             const uploadTime = new Date().toISOString();
 
@@ -244,6 +244,7 @@
 
             if (fileId) {
                 uploaderSection.classList.add('hidden');
+                viewerSection.classList.remove('hidden');
 
                 try {
                     const { data, error } = await supabase
@@ -253,12 +254,11 @@
                         .single();
 
                     if (error || !data || new Date(data.expires_at) < new Date()) {
-                        viewerSection.classList.remove('hidden');
-                        viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired.</p>`;
+                        viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired. It may have been deleted.</p>`;
                         return;
                     }
 
-                    const { data: { signedUrl }, error: signedUrlError } = await supabase.storage
+                    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
                         .createSignedUrl(fileId, 60);
 
@@ -266,27 +266,30 @@
                         throw signedUrlError;
                     }
                     
-                    // Display file viewer
-                    viewerSection.classList.remove('hidden');
+                    const signedUrl = signedUrlData.signedUrl;
+
                     viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
                     viewerUploadedSpan.innerText = new Date(data.created_at).toLocaleString();
                     
-                    // Determine file type and display
                     const fileExtension = fileId.split('.').pop().toLowerCase();
-                    const mediaElement = document.createElement('div');
-                    mediaElement.innerHTML = '';
-                    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension)) {
-                        mediaElement.innerHTML = `<img src="${signedUrl}" alt="Shared File">`;
-                    } else if (['mp4', 'webm', 'ogg'].includes(fileExtension)) {
-                        mediaElement.innerHTML = `<video controls src="${signedUrl}" type="video/${fileExtension}"></video>`;
-                    } else {
-                        // For other files, provide a download link
-                        mediaElement.innerHTML = `<p>File preview not available. <a href="${signedUrl}" download>Click here to download.</a></p>`;
-                    }
-                    fileViewerDiv.innerHTML = ''; // Clear previous content
-                    fileViewerDiv.appendChild(mediaElement);
+                    let mediaElement = '';
+                    
+                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+                    const videoExtensions = ['mp4', 'webm', 'ogg'];
+                    const audioExtensions = ['mp3', 'wav', 'ogg'];
 
-                    // Check ownership for delete button
+                    if (imageExtensions.includes(fileExtension)) {
+                        mediaElement = `<img src="${signedUrl}" alt="Shared File">`;
+                    } else if (videoExtensions.includes(fileExtension)) {
+                        mediaElement = `<video controls src="${signedUrl}" type="video/${fileExtension}"></video>`;
+                    } else if (audioExtensions.includes(fileExtension)) {
+                        mediaElement = `<audio controls src="${signedUrl}" type="audio/${fileExtension}"></audio>`;
+                    } else {
+                        mediaElement = `<p>File preview not available. <a href="${signedUrl}" download>Click here to download.</a></p>`;
+                    }
+
+                    fileViewerDiv.innerHTML = mediaElement;
+
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                     if (ownedFiles.includes(fileId)) {
                         deleteFileButton.classList.remove('hidden');
@@ -297,14 +300,14 @@
 
                 } catch (error) {
                     console.error('File view error:', error);
-                    viewerSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file.</p>`;
+                    viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid or the file has expired. It may have been deleted.</p>`;
                 }
             }
         }
 
         async function deleteFile() {
             const fileId = deleteFileButton.dataset.fileId;
-            if (!confirm(`Are you sure you want to delete this file permanently?`)) {
+            if (!confirm(`Are you sure you want to delete this file permanently? This action cannot be undone.`)) {
                 return;
             }
 
@@ -312,16 +315,7 @@
             deleteFileButton.disabled = true;
 
             try {
-                // Delete from Supabase Storage
-                const { error: storageError } = await supabase.storage
-                    .from('files')
-                    .remove([fileId]);
-
-                if (storageError) {
-                    throw storageError;
-                }
-
-                // Delete from shared_files table
+                // Delete from shared_files table first
                 const { error: dbError } = await supabase
                     .from('shared_files')
                     .delete()
@@ -331,13 +325,22 @@
                     throw dbError;
                 }
 
+                // Delete from Supabase Storage
+                const { error: storageError } = await supabase.storage
+                    .from('files')
+                    .remove([fileId]);
+
+                if (storageError) {
+                    throw storageError;
+                }
+
                 // Remove from local storage
                 let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                 ownedFiles = ownedFiles.filter(id => id !== fileId);
                 localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
                 
                 alert('File deleted successfully!');
-                window.location.href = SHARE_BASE_URL; // Redirect back to the main page
+                window.location.href = SHARE_BASE_URL;
 
             } catch (error) {
                 console.error('Delete error:', error);
