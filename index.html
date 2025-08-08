@@ -67,6 +67,22 @@
         button:hover {
             background-color: #0056b3;
         }
+        
+        .go-to-link-button {
+            background-color: #28a745;
+        }
+
+        .go-to-link-button:hover {
+            background-color: #218838;
+        }
+        
+        .perma-link-button {
+            background-color: #17a2b8;
+        }
+        
+        .perma-link-button:hover {
+            background-color: #138496;
+        }
 
         .delete-button {
             background-color: #dc3545;
@@ -146,13 +162,15 @@
         <p>Share this link:</p>
         <div id="shareable-link"></div>
         <button onclick="copyLink()">Copy Link</button>
+        <button class="go-to-link-button" onclick="goToLink()">Go to link</button>
     </div>
 
     <div class="container hidden" id="viewer">
         <h2 id="viewer-filename">File Information</h2>
         <div id="file-viewer"></div>
-        <p><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
+        <p id="expiration-info"><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
         <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
+        <button id="perma-link-button" class="perma-link-button hidden" onclick="createPermaLink()">Create Perma Link</button>
         <button id="delete-file-button" class="delete-button hidden" onclick="deleteFile()">Delete File</button>
     </div>
 
@@ -181,7 +199,9 @@
         const viewerFilenameH2 = document.getElementById('viewer-filename');
         const viewerExpiresSpan = document.getElementById('viewer-expires');
         const viewerUploadedSpan = document.getElementById('viewer-uploaded');
+        const expirationInfo = document.getElementById('expiration-info');
         const deleteFileButton = document.getElementById('delete-file-button');
+        const permaLinkButton = document.getElementById('perma-link-button');
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
 
         async function handleUpload(event) {
@@ -245,6 +265,7 @@
         async function handleFileView() {
             const urlParams = new URLSearchParams(window.location.search);
             const fileId = urlParams.get('fileid');
+            const isPermaLink = fileId && fileId.startsWith('perm-');
 
             if (fileId) {
                 uploaderSection.classList.add('hidden');
@@ -257,14 +278,14 @@
                         .eq('file_id', fileId)
                         .single();
 
-                    if (error || !data || new Date(data.expires_at) < new Date()) {
+                    if (error || !data || (!isPermaLink && new Date(data.expires_at) < new Date())) {
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
 
                     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
-                        .createSignedUrl(fileId, 60);
+                        .createSignedUrl(isPermaLink ? fileId.substring(5) : fileId, 60);
 
                     if (signedUrlError) {
                         throw signedUrlError;
@@ -274,8 +295,15 @@
                     const fileName = data.file_name;
 
                     viewerFilenameH2.innerText = `File: ${fileName}`;
-                    viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
                     viewerUploadedSpan.innerText = new Date(data.created_at).toLocaleString();
+                    
+                    if (isPermaLink) {
+                        expirationInfo.classList.add('hidden');
+                        deleteFileButton.classList.add('hidden');
+                    } else {
+                        expirationInfo.classList.remove('hidden');
+                        viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
+                    }
 
                     const fileExtension = fileName.split('.').pop().toLowerCase();
                     let mediaElement = '';
@@ -297,11 +325,20 @@
                     fileViewerDiv.innerHTML = mediaElement;
 
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
-                    if (ownedFiles.includes(fileId)) {
-                        deleteFileButton.classList.remove('hidden');
+                    const originalFileId = isPermaLink ? fileId.substring(5) : fileId;
+
+                    if (ownedFiles.includes(originalFileId)) {
+                        if (isPermaLink) {
+                            deleteFileButton.classList.remove('hidden');
+                        } else {
+                            deleteFileButton.classList.remove('hidden');
+                            permaLinkButton.classList.remove('hidden');
+                        }
                         deleteFileButton.dataset.fileId = fileId;
+                        permaLinkButton.dataset.fileId = fileId;
                     } else {
                         deleteFileButton.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
                     }
 
                 } catch (error) {
@@ -311,8 +348,50 @@
             }
         }
 
+        async function createPermaLink() {
+            const fileId = permaLinkButton.dataset.fileId;
+            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and cannot be undone. It will also not be deletable.')) {
+                return;
+            }
+
+            permaLinkButton.innerText = 'Creating...';
+            permaLinkButton.disabled = true;
+
+            const newFileId = `perm-${fileId}`;
+
+            try {
+                const { error: updateError } = await supabase
+                    .from('shared_files')
+                    .update({ expires_at: null, file_id: newFileId })
+                    .eq('file_id', fileId);
+
+                if (updateError) {
+                    throw updateError;
+                }
+                
+                // Update local storage
+                let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
+                ownedFiles = ownedFiles.filter(id => id !== fileId);
+                ownedFiles.push(newFileId);
+                localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
+                
+                alert('Permanent link created successfully!');
+                window.location.href = `${SHARE_BASE_URL}?fileid=${newFileId}`;
+
+            } catch (error) {
+                console.error('Perma link creation error:', error);
+                alert(`Error creating permanent link: ${error.message}`);
+                permaLinkButton.innerText = 'Create Perma Link';
+                permaLinkButton.disabled = false;
+            }
+        }
+
         async function deleteFile() {
             const fileId = deleteFileButton.dataset.fileId;
+            if (fileId.startsWith('perm-')) {
+                alert('This file is a permanent link and cannot be deleted through this interface. Please contact support.');
+                return;
+            }
             if (!confirm(`Are you sure you want to delete this file permanently? This action cannot be undone.`)) {
                 return;
             }
@@ -360,6 +439,10 @@
             navigator.clipboard.writeText(shareableLinkDiv.innerText).then(() => {
                 alert('Link copied to clipboard!');
             });
+        }
+        
+        function goToLink() {
+            window.location.href = shareableLinkDiv.innerText;
         }
 
         uploadForm.addEventListener('submit', handleUpload);
