@@ -118,7 +118,7 @@
             font-weight: 500;
         }
 
-        #shareable-link {
+        #shareable-link, .permalink-info .link-box {
             word-break: break-all;
             background-color: #f0f4f7;
             padding: 12px;
@@ -177,6 +177,33 @@
             color: #666;
             font-style: italic;
         }
+        
+        .permalink-info {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            background-color: #e2f7e4;
+            text-align: center;
+        }
+        
+        .permalink-info h3 {
+            color: #218838;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .permalink-info .link-box {
+            margin: 10px 0;
+            background-color: #fff;
+            border: 1px solid #ddd;
+        }
+        
+        .permalink-info button {
+            width: auto;
+            display: inline-block;
+            padding: 10px 20px;
+        }
 
         @media (min-width: 600px) {
             body {
@@ -221,6 +248,11 @@
 
     <div class="container hidden" id="viewer">
         <h2 id="viewer-filename">File Information</h2>
+        <div class="permalink-info hidden" id="permalink-message">
+            <h3>This file has been turned into a permanent link.</h3>
+            <div class="link-box" id="permanent-link-display"></div>
+            <button class="go-to-link-button" onclick="goToPermanentLink()">Go to Link</button>
+        </div>
         <div id="file-viewer"></div>
         <p id="expiration-info"><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
         <div class="uploaded-info">
@@ -271,6 +303,8 @@
         const customPermaLinkInput = document.getElementById('custom-perma-link-input');
         const customPermaLinkButton = document.getElementById('custom-perma-link-button');
         const customPermaLinkStatus = document.getElementById('custom-perma-link-status');
+        const permalinkMessage = document.getElementById('permalink-message');
+        const permanentLinkDisplay = document.getElementById('permanent-link-display');
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
 
         expirationSelect.addEventListener('change', () => {
@@ -453,6 +487,22 @@
                     const uploadedDate = new Date(fileData.created_at);
                     viewerUploadedSpan.innerText = uploadedDate.toLocaleString();
                     uploadedTimeAgoSpan.innerText = `• ${formatTimeAgo(uploadedDate)}`;
+                    
+                    // New logic to handle permanent links on the original link
+                    if (fileData.is_permanent && !fileIdParam.startsWith('perm-') && fileIdParam !== fileData.custom_file_id) {
+                        permalinkMessage.classList.remove('hidden');
+                        const permaLink = fileData.custom_file_id ? `${SHARE_BASE_URL}?fileid=${fileData.custom_file_id}` : `${SHARE_BASE_URL}?fileid=${fileData.permanent_link_id}`;
+                        permanentLinkDisplay.innerText = permaLink;
+                        // Hide other elements not relevant for the original link view
+                        expirationInfo.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.add('hidden'); // Hide the file viewer
+                        return; // Stop further processing to avoid showing the file
+                    } else {
+                        permalinkMessage.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.remove('hidden'); // Show the file viewer
+                    }
 
                     if (fileData.is_permanent) {
                         expirationInfo.classList.add('hidden');
@@ -632,7 +682,7 @@
 
             const { data, error } = await supabase
                 .from('shared_files')
-                .select('is_permanent')
+                .select('is_permanent, custom_file_id, permanent_link_id')
                 .eq('file_id', fileId)
                 .single();
             
@@ -694,6 +744,10 @@
         
         function goToLink() {
             window.location.href = shareableLinkDiv.innerText;
+        }
+        
+        function goToPermanentLink() {
+            window.location.href = permanentLinkDisplay.innerText;
         }
 
         uploadForm.addEventListener('submit', handleUpload);
