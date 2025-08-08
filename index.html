@@ -38,7 +38,7 @@
             display: none;
         }
 
-        input[type="file"], select, button {
+        input[type="file"], select, button, input[type="text"] {
             width: 100%;
             padding: 12px;
             margin-bottom: 15px;
@@ -129,6 +129,28 @@
             display: block;
         }
 
+        #custom-expiration-container {
+            margin-bottom: 15px;
+        }
+        
+        #custom-expiration-container p {
+            font-size: 14px;
+            color: #666;
+            margin: 5px 0 0;
+        }
+        
+        .uploaded-info {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .uploaded-info .time-ago {
+            margin-left: 5px;
+            color: #666;
+            font-style: italic;
+        }
+
         @media (min-width: 600px) {
             body {
                 padding: 40px;
@@ -151,7 +173,12 @@
                 <option value="86400">1 Day</option>
                 <option value="259200">3 Days</option>
                 <option value="604800">7 Days</option>
+                <option value="custom">Custom</option>
             </select>
+            <div id="custom-expiration-container" class="hidden">
+                <input type="text" id="custom-expiration-input" placeholder="e.g., 2d, 12h, 30m" />
+                <p>Valid formats: 1m to 7d (1 minute to 7 days). Examples: 10m, 1h, 2d.</p>
+            </div>
             <button type="submit">Upload File</button>
         </form>
         <p id="upload-status"></p>
@@ -169,7 +196,10 @@
         <h2 id="viewer-filename">File Information</h2>
         <div id="file-viewer"></div>
         <p id="expiration-info"><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
-        <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
+        <div class="uploaded-info">
+            <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
+            <span id="uploaded-time-ago" class="time-ago"></span>
+        </div>
         <button id="perma-link-button" class="perma-link-button hidden" onclick="createPermaLink()">Create Perma Link</button>
         <button id="delete-file-button" class="delete-button hidden" onclick="deleteFile()">Delete File</button>
     </div>
@@ -193,17 +223,76 @@
         const uploadForm = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
         const expirationSelect = document.getElementById('expiration-date');
+        const customExpirationContainer = document.getElementById('custom-expiration-container');
+        const customExpirationInput = document.getElementById('custom-expiration-input');
         const uploadStatus = document.getElementById('upload-status');
         const shareableLinkDiv = document.getElementById('shareable-link');
         const fileViewerDiv = document.getElementById('file-viewer');
         const viewerFilenameH2 = document.getElementById('viewer-filename');
         const viewerExpiresSpan = document.getElementById('viewer-expires');
         const viewerUploadedSpan = document.getElementById('viewer-uploaded');
+        const uploadedTimeAgoSpan = document.getElementById('uploaded-time-ago');
         const expirationInfo = document.getElementById('expiration-info');
         const deleteFileButton = document.getElementById('delete-file-button');
         const permaLinkButton = document.getElementById('perma-link-button');
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
 
+        expirationSelect.addEventListener('change', () => {
+            if (expirationSelect.value === 'custom') {
+                customExpirationContainer.classList.remove('hidden');
+            } else {
+                customExpirationContainer.classList.add('hidden');
+            }
+        });
+        
+        function parseCustomTime(input) {
+            const regex = /^(\d+)(m|h|d)$/;
+            const match = input.toLowerCase().match(regex);
+            if (!match) return null;
+
+            const value = parseInt(match[1], 10);
+            const unit = match[2];
+            let seconds = 0;
+
+            if (unit === 'm') {
+                seconds = value * 60;
+            } else if (unit === 'h') {
+                seconds = value * 60 * 60;
+            } else if (unit === 'd') {
+                seconds = value * 60 * 60 * 24;
+            }
+
+            // Enforce min (1m) and max (7d)
+            const minSeconds = 60;
+            const maxSeconds = 7 * 24 * 60 * 60;
+            
+            if (seconds < minSeconds || seconds > maxSeconds) {
+                return null;
+            }
+
+            return seconds;
+        }
+
+        function formatTimeAgo(dateString) {
+            const now = new Date();
+            const past = new Date(dateString);
+            const seconds = Math.floor((now - past) / 1000);
+
+            if (seconds < 60) {
+                return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+            }
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) {
+                return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+            }
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+            }
+            const days = Math.floor(hours / 24);
+            return `${days} day${days !== 1 ? 's' : ''} ago`;
+        }
+        
         async function handleUpload(event) {
             event.preventDefault();
             const file = fileInput.files[0];
@@ -214,8 +303,18 @@
 
             uploadStatus.innerText = 'Uploading...';
 
+            let expirationSeconds = null;
+            if (expirationSelect.value === 'custom') {
+                expirationSeconds = parseCustomTime(customExpirationInput.value);
+                if (expirationSeconds === null) {
+                    uploadStatus.innerText = 'Invalid custom time. Please use a format like 10m, 1h, or 2d (1 minute to 7 days).';
+                    return;
+                }
+            } else {
+                expirationSeconds = parseInt(expirationSelect.value, 10);
+            }
+            
             const fileId = self.crypto.randomUUID();
-            const expirationSeconds = parseInt(expirationSelect.value, 10);
             const uploadTime = new Date().toISOString();
 
             try {
@@ -302,8 +401,10 @@
                     const fileName = fileData.file_name;
 
                     viewerFilenameH2.innerText = `File: ${fileName}`;
-                    viewerUploadedSpan.innerText = new Date(fileData.created_at).toLocaleString();
-                    
+                    const uploadedDate = new Date(fileData.created_at);
+                    viewerUploadedSpan.innerText = uploadedDate.toLocaleString();
+                    uploadedTimeAgoSpan.innerText = `• ${formatTimeAgo(uploadedDate)}`;
+
                     if (fileData.is_permanent) {
                         expirationInfo.classList.add('hidden');
                         permaLinkButton.classList.add('hidden');
