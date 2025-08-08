@@ -261,34 +261,29 @@
         async function handleFileView() {
             const urlParams = new URLSearchParams(window.location.search);
             const fileIdParam = urlParams.get('fileid');
-            const fileId = fileIdParam;
             let fileData = null;
+            let originalFileId = null;
 
-            if (fileId) {
+            if (fileIdParam) {
                 uploaderSection.classList.add('hidden');
                 viewerSection.classList.remove('hidden');
 
                 try {
-                    // Try to fetch file by primary key (file_id)
-                    const { data, error } = await supabase
-                        .from('shared_files')
-                        .select('*')
-                        .eq('file_id', fileId)
-                        .single();
+                    let query = supabase.from('shared_files').select('*');
 
-                    if (!data) {
-                        // If not found by primary key, try to fetch by permanent_link_id
-                        const { data: permaData, error: permaError } = await supabase
-                            .from('shared_files')
-                            .select('*')
-                            .eq('permanent_link_id', fileId)
-                            .single();
-                        
-                        fileData = permaData;
-                        if (permaError) throw permaError;
+                    if (fileIdParam.startsWith('perm-')) {
+                        // This is a permanent link, query by permanent_link_id
+                        query = query.eq('permanent_link_id', fileIdParam);
                     } else {
-                        fileData = data;
+                        // This is a temporary link, query by file_id
+                        query = query.eq('file_id', fileIdParam);
                     }
+
+                    const { data, error } = await query.single();
+                    fileData = data;
+                    if (error) throw error;
+                    
+                    originalFileId = fileData.file_id;
 
                     if (!fileData || (!fileData.is_permanent && new Date(fileData.expires_at) < new Date())) {
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
@@ -297,7 +292,7 @@
 
                     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
-                        .createSignedUrl(fileData.file_id, 60);
+                        .createSignedUrl(originalFileId, 60);
 
                     if (signedUrlError) {
                         throw signedUrlError;
@@ -337,7 +332,6 @@
                     fileViewerDiv.innerHTML = mediaElement;
 
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
-                    const originalFileId = fileData.file_id;
 
                     if (ownedFiles.includes(originalFileId)) {
                         deleteFileButton.classList.remove('hidden');
@@ -369,7 +363,7 @@
             permaLinkButton.innerText = 'Creating...';
             permaLinkButton.disabled = true;
             
-            const newPermaId = self.crypto.randomUUID();
+            const newPermaId = `perm-${self.crypto.randomUUID()}`;
 
             try {
                 const { error: updateError } = await supabase
