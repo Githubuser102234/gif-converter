@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple File Sharing</title>
+    <style>
+        /* Mobile-first styles */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f7f7f7;
+            color: #333;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background-color: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #1a1a1a;
+            margin-top: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        input[type="file"], select, button, input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        input[type="file"] {
+            background-color: #f9f9f9;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        .go-to-link-button {
+            background-color: #28a745;
+        }
+
+        .go-to-link-button:hover {
+            background-color: #218838;
+        }
+        
+        .perma-link-button {
+            background-color: #17a2b8;
+        }
+        
+        .perma-link-button:hover {
+            background-color: #138496;
+        }
+
+        .delete-button {
+            background-color: #dc3545;
+        }
+
+        .delete-button:hover {
+            background-color: #c82333;
+        }
+        
+        .custom-perma-link-container {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .custom-perma-link-container input {
+            margin-bottom: 0;
+        }
+        
+        .custom-perma-link-button {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .custom-perma-link-button:hover {
+            background-color: #e0a800;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        #shareable-link, .permalink-info .link-box {
+            word-break: break-all;
+            background-color: #f0f4f7;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        #upload-status {
+            text-align: center;
+            margin-top: 15px;
+            font-weight: 500;
+        }
+        
+        #custom-perma-link-status {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 5px;
+            color: #dc3545;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        #file-viewer img, #file-viewer video, #file-viewer audio {
+            max-width: 100%;
+            height: auto;
+            margin-top: 20px;
+            display: block;
+        }
+
+        #custom-expiration-container {
+            margin-bottom: 15px;
+        }
+        
+        #custom-expiration-container p {
+            font-size: 14px;
+            color: #666;
+            margin: 5px 0 0;
+        }
+        
+        .uploaded-info {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .uploaded-info .time-ago {
+            margin-left: 5px;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .permalink-info {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            background-color: #e2f7e4;
+            text-align: center;
+        }
+        
+        .permalink-info h3 {
+            color: #218838;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .permalink-info .link-box {
+            margin: 10px 0;
+            background-color: #fff;
+            border: 1px solid #ddd;
+        }
+        
+        .permalink-info button {
+            width: auto;
+            display: inline-block;
+            padding: 10px 20px;
+        }
+
+        @media (min-width: 600px) {
+            body {
+                padding: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="uploader">
+        <h1>Upload a File</h1>
+        <form id="upload-form">
+            <label for="file-input">Choose your file:</label>
+            <input type="file" id="file-input" required />
+
+            <label for="expiration-date">Auto-Expiration:</label>
+            <select id="expiration-date">
+                <option value="3600">1 Hour</option>
+                <option value="21600">6 Hours</option>
+                <option value="86400">1 Day</option>
+                <option value="259200">3 Days</option>
+                <option value="604800">7 Days</option>
+                <option value="custom">Custom</option>
+            </select>
+            <div id="custom-expiration-container" class="hidden">
+                <input type="text" id="custom-expiration-input" placeholder="e.g., 2d, 12h, 30m" />
+                <p>Valid formats: 1m to 7d (1 minute to 7 days). Examples: 10m, 1h, 2d.</p>
+            </div>
+            <button type="submit">Upload File</button>
+        </form>
+        <p id="upload-status"></p>
+    </div>
+
+    <div class="container hidden" id="sharer">
+        <h2>Your File is Ready!</h2>
+        <p>Share this link:</p>
+        <div id="shareable-link"></div>
+        <button onclick="copyLink()">Copy Link</button>
+        <button class="go-to-link-button" onclick="goToLink()">Go to link</button>
+    </div>
+
+    <div class="container hidden" id="viewer">
+        <h2 id="viewer-filename">File Information</h2>
+        <div class="permalink-info hidden" id="permalink-message">
+            <h3>This file has been turned into a permanent link.</h3>
+            <div class="link-box" id="permanent-link-display"></div>
+            <button class="go-to-link-button" onclick="goToPermanentLink()">Go to Link</button>
+        </div>
+        <div id="file-viewer"></div>
+        <p id="expiration-info"><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
+        <div class="uploaded-info">
+            <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
+            <span id="uploaded-time-ago" class="time-ago"></span>
+        </div>
+        <button id="perma-link-button" class="perma-link-button hidden" onclick="createPermaLink()">Create Perma Link</button>
+        <div id="custom-perma-link-container" class="custom-perma-link-container hidden">
+            <input type="text" id="custom-perma-link-input" placeholder="Custom ID (max 25 chars)" maxlength="25" />
+            <button id="custom-perma-link-button" class="custom-perma-link-button" onclick="createCustomPermaLink()">Create Custom Perma Link</button>
+            <p id="custom-perma-link-status"></p>
+        </div>
+        <button id="delete-file-button" class="delete-button hidden" onclick="deleteFile()">Delete File</button>
+    </div>
+
+    <div class="container hidden" id="downloader">
+        <h2>File Download</h2>
+        <p>Please wait, your download should start automatically.</p>
+        <p>If not, <a id="download-link" href="#">click here</a>.</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const supabaseUrl = 'https://sarbeabfdlskvleyjbnd.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhcmJlYWJmZGxza3ZsZXlqYm5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ2MDUzMzgsImV4cCI6MjA3MDE4MTMzOH0.P_Q4zFN8qOWRbR5kvTZ6eAKIhFk5VDwx6RL8KvtCd_Y';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        const uploaderSection = document.getElementById('uploader');
+        const sharerSection = document.getElementById('sharer');
+        const viewerSection = document.getElementById('viewer');
+        const downloaderSection = document.getElementById('downloader');
+        const uploadForm = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const expirationSelect = document.getElementById('expiration-date');
+        const customExpirationContainer = document.getElementById('custom-expiration-container');
+        const customExpirationInput = document.getElementById('custom-expiration-input');
+        const uploadStatus = document.getElementById('upload-status');
+        const shareableLinkDiv = document.getElementById('shareable-link');
+        const fileViewerDiv = document.getElementById('file-viewer');
+        const viewerFilenameH2 = document.getElementById('viewer-filename');
+        const viewerExpiresSpan = document.getElementById('viewer-expires');
+        const viewerUploadedSpan = document.getElementById('viewer-uploaded');
+        const uploadedTimeAgoSpan = document.getElementById('uploaded-time-ago');
+        const expirationInfo = document.getElementById('expiration-info');
+        const deleteFileButton = document.getElementById('delete-file-button');
+        const permaLinkButton = document.getElementById('perma-link-button');
+        const customPermaLinkContainer = document.getElementById('custom-perma-link-container');
+        const customPermaLinkInput = document.getElementById('custom-perma-link-input');
+        const customPermaLinkButton = document.getElementById('custom-perma-link-button');
+        const customPermaLinkStatus = document.getElementById('custom-perma-link-status');
+        const permalinkMessage = document.getElementById('permalink-message');
+        const permanentLinkDisplay = document.getElementById('permanent-link-display');
+        const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
+
+        expirationSelect.addEventListener('change', () => {
+            if (expirationSelect.value === 'custom') {
+                customExpirationContainer.classList.remove('hidden');
+            } else {
+                customExpirationContainer.classList.add('hidden');
+            }
+        });
+        
+        function parseCustomTime(input) {
+            const regex = /^(\d+)(m|h|d)$/;
+            const match = input.toLowerCase().match(regex);
+            if (!match) return null;
+
+            const value = parseInt(match[1], 10);
+            const unit = match[2];
+            let seconds = 0;
+
+            if (unit === 'm') {
+                seconds = value * 60;
+            } else if (unit === 'h') {
+                seconds = value * 60 * 60;
+            } else if (unit === 'd') {
+                seconds = value * 60 * 60 * 24;
+            }
+
+            // Enforce min (1m) and max (7d)
+            const minSeconds = 60;
+            const maxSeconds = 7 * 24 * 60 * 60;
+            
+            if (seconds < minSeconds || seconds > maxSeconds) {
+                return null;
+            }
+
+            return seconds;
+        }
+
+        function formatTimeAgo(dateString) {
+            const now = new Date();
+            const past = new Date(dateString);
+            const seconds = Math.floor((now - past) / 1000);
+
+            if (seconds < 60) {
+                return `${seconds} second${seconds !== 1 ? 's' : ''} ago`;
+            }
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) {
+                return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+            }
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+            }
+            const days = Math.floor(hours / 24);
+            return `${days} day${days !== 1 ? 's' : ''} ago`;
+        }
+        
+        async function handleUpload(event) {
+            event.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) {
+                uploadStatus.innerText = 'Please select a file.';
+                return;
+            }
+
+            uploadStatus.innerText = 'Uploading...';
+
+            let expirationSeconds = null;
+            if (expirationSelect.value === 'custom') {
+                expirationSeconds = parseCustomTime(customExpirationInput.value);
+                if (expirationSeconds === null) {
+                    uploadStatus.innerText = 'Invalid custom time. Please use a format like 10m, 1h, or 2d (1 minute to 7 days).';
+                    return;
+                }
+            } else {
+                expirationSeconds = parseInt(expirationSelect.value, 10);
+            }
+            
+            const fileId = self.crypto.randomUUID();
+            const uploadTime = new Date().toISOString();
+
+            try {
+                const { error: uploadError } = await supabase.storage
+                    .from('files')
+                    .upload(fileId, file);
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
+                const { error: dbError } = await supabase
+                    .from('shared_files')
+                    .insert([
+                        {
+                            file_id: fileId,
+                            file_name: file.name,
+                            expires_at: new Date(Date.now() + expirationSeconds * 1000).toISOString(),
+                            created_at: uploadTime,
+                        },
+                    ]);
+
+                if (dbError) {
+                    throw dbError;
+                }
+                
+                let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
+                ownedFiles.push(fileId);
+                localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
+
+                uploaderSection.classList.add('hidden');
+                sharerSection.classList.remove('hidden');
+
+                const shareLink = `${SHARE_BASE_URL}?fileid=${fileId}`;
+                shareableLinkDiv.innerText = shareLink;
+                uploadStatus.innerText = '';
+            } catch (error) {
+                uploadStatus.innerText = `Error: ${error.message}`;
+                console.error('Upload error:', error);
+            }
+        }
+
+        async function handleFileView() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileIdParam = urlParams.get('fileid');
+            let fileData = null;
+            let originalFileId = null;
+
+            if (fileIdParam) {
+                uploaderSection.classList.add('hidden');
+                viewerSection.classList.remove('hidden');
+
+                try {
+                    let query = supabase.from('shared_files').select('*');
+
+                    // Check for both permanent_link_id and the new custom_file_id
+                    if (fileIdParam.startsWith('perm-')) {
+                        query = query.eq('permanent_link_id', fileIdParam);
+                    } else {
+                        // Check for the custom ID first
+                        const { data: customData } = await supabase
+                            .from('shared_files')
+                            .select('*')
+                            .eq('custom_file_id', fileIdParam)
+                            .single();
+
+                        if (customData) {
+                            fileData = customData;
+                        } else {
+                            // If no custom ID found, fall back to the standard file_id
+                            query = query.eq('file_id', fileIdParam);
+                        }
+                    }
+
+                    // If fileData wasn't found via custom ID, run the query from above
+                    if (!fileData) {
+                        const { data, error } = await query.single();
+                        fileData = data;
+                        if (error) throw error;
+                    }
+
+                    if (!fileData || (!fileData.is_permanent && new Date(fileData.expires_at) < new Date())) {
+                        viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
+                        return;
+                    }
+                    
+                    originalFileId = fileData.file_id;
+                    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                        .from('files')
+                        .createSignedUrl(originalFileId, 60);
+
+                    if (signedUrlError) {
+                        throw signedUrlError;
+                    }
+
+                    const signedUrl = signedUrlData.signedUrl;
+                    const fileName = fileData.file_name;
+
+                    viewerFilenameH2.innerText = `File: ${fileName}`;
+                    const uploadedDate = new Date(fileData.created_at);
+                    viewerUploadedSpan.innerText = uploadedDate.toLocaleString();
+                    uploadedTimeAgoSpan.innerText = `• ${formatTimeAgo(uploadedDate)}`;
+                    
+                    // New logic to handle permanent links on the original link
+                    if (fileData.is_permanent && !fileIdParam.startsWith('perm-') && fileIdParam !== fileData.custom_file_id) {
+                        permalinkMessage.classList.remove('hidden');
+                        const permaLink = fileData.custom_file_id ? `${SHARE_BASE_URL}?fileid=${fileData.custom_file_id}` : `${SHARE_BASE_URL}?fileid=${fileData.permanent_link_id}`;
+                        permanentLinkDisplay.innerText = permaLink;
+                        // Hide other elements not relevant for the original link view
+                        expirationInfo.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.add('hidden'); // Hide the file viewer
+                        return; // Stop further processing to avoid showing the file
+                    } else {
+                        permalinkMessage.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.remove('hidden'); // Show the file viewer
+                    }
+
+                    if (fileData.is_permanent) {
+                        expirationInfo.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                    } else {
+                        expirationInfo.classList.remove('hidden');
+                        viewerExpiresSpan.innerText = new Date(fileData.expires_at).toLocaleString();
+                    }
+
+                    const fileExtension = fileName.split('.').pop().toLowerCase();
+                    let mediaElement = '';
+
+                    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp'];
+                    const videoExtensions = ['mp4', 'webm', 'ogg', 'mov', 'avi'];
+                    const audioExtensions = ['mp3', 'wav', 'ogg', 'm4a', 'flac'];
+
+                    if (imageExtensions.includes(fileExtension)) {
+                        mediaElement = `<img src="${signedUrl}" alt="Shared File">`;
+                    } else if (videoExtensions.includes(fileExtension)) {
+                        mediaElement = `<video controls src="${signedUrl}" type="video/${fileExtension}"></video>`;
+                    } else if (audioExtensions.includes(fileExtension)) {
+                        mediaElement = `<audio controls src="${signedUrl}" type="audio/${fileExtension}"></audio>`;
+                    } else {
+                        mediaElement = `<p>File preview not available. <a href="${signedUrl}" download="${fileName}">Click here to download.</a></p>`;
+                    }
+
+                    fileViewerDiv.innerHTML = mediaElement;
+
+                    const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
+
+                    if (ownedFiles.includes(originalFileId)) {
+                        deleteFileButton.classList.remove('hidden');
+                        deleteFileButton.dataset.fileId = originalFileId;
+                        if (!fileData.is_permanent) {
+                            permaLinkButton.classList.remove('hidden');
+                            permaLinkButton.dataset.fileId = originalFileId;
+                            customPermaLinkContainer.classList.remove('hidden');
+                            customPermaLinkButton.dataset.fileId = originalFileId;
+                        } else {
+                            permaLinkButton.classList.add('hidden');
+                            customPermaLinkContainer.classList.add('hidden');
+                        }
+                    } else {
+                        deleteFileButton.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                    }
+
+                } catch (error) {
+                    console.error('File view error:', error);
+                    viewerSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file. It may have been deleted or the link is invalid.</p>`;
+                }
+            }
+        }
+        
+        async function checkCustomFileId(customId) {
+            const { data, error } = await supabase
+                .from('shared_files')
+                .select('custom_file_id')
+                .eq('custom_file_id', customId)
+                .single();
+            
+            if (error && error.code === 'PGRST116') {
+                // No rows found, the ID is available
+                return false;
+            } else if (data) {
+                // ID already exists
+                return true;
+            } else {
+                // Other error
+                throw error;
+            }
+        }
+        
+        async function createCustomPermaLink() {
+            const originalFileId = customPermaLinkButton.dataset.fileId;
+            let customId = customPermaLinkInput.value.trim();
+
+            if (!customId) {
+                customPermaLinkStatus.innerText = 'Please enter a custom ID.';
+                return;
+            }
+            
+            // Replace spaces with hyphens
+            customId = customId.replace(/ /g, '-');
+            
+            // Simple validation for max characters and allowed characters
+            if (customId.length > 25) {
+                customPermaLinkStatus.innerText = 'Custom ID cannot be more than 25 characters.';
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9-]+$/.test(customId)) {
+                customPermaLinkStatus.innerText = 'Custom ID can only contain letters, numbers, and hyphens.';
+                return;
+            }
+
+            customPermaLinkButton.innerText = 'Checking...';
+            customPermaLinkButton.disabled = true;
+            customPermaLinkStatus.innerText = '';
+            
+            try {
+                const isTaken = await checkCustomFileId(customId);
+                if (isTaken) {
+                    customPermaLinkStatus.innerText = 'This custom ID is already in use. Please choose another one.';
+                    customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                    customPermaLinkButton.disabled = false;
+                    return;
+                }
+            } catch (error) {
+                console.error('Check ID error:', error);
+                customPermaLinkStatus.innerText = `Error checking ID: ${error.message}`;
+                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.disabled = false;
+                return;
+            }
+
+            customPermaLinkButton.innerText = 'Creating...';
+
+            try {
+                const { error: updateError } = await supabase
+                    .from('shared_files')
+                    .update({ expires_at: null, is_permanent: true, custom_file_id: customId })
+                    .eq('file_id', originalFileId);
+
+                if (updateError) {
+                    throw updateError;
+                }
+
+                alert('Custom permanent link created successfully!');
+                const customPermaLink = `${SHARE_BASE_URL}?fileid=${customId}`;
+                window.location.href = customPermaLink;
+            } catch (error) {
+                console.error('Custom perma link creation error:', error);
+                customPermaLinkStatus.innerText = `Error creating custom link: ${error.message}`;
+                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.disabled = false;
+            }
+        }
+
+        async function createPermaLink() {
+            const originalFileId = permaLinkButton.dataset.fileId;
+            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and undeletable.')) {
+                return;
+            }
+
+            permaLinkButton.innerText = 'Creating...';
+            permaLinkButton.disabled = true;
+            
+            const newPermaId = `perm-${self.crypto.randomUUID()}`;
+
+            try {
+                const { error: updateError } = await supabase
+                    .from('shared_files')
+                    .update({ expires_at: null, is_permanent: true, permanent_link_id: newPermaId })
+                    .eq('file_id', originalFileId);
+
+                if (updateError) {
+                    throw updateError;
+                }
+
+                alert('Permanent link created successfully!');
+                const permaLink = `${SHARE_BASE_URL}?fileid=${newPermaId}`;
+                window.location.href = permaLink;
+
+            } catch (error) {
+                console.error('Perma link creation error:', error);
+                alert(`Error creating permanent link: ${error.message}`);
+                permaLinkButton.innerText = 'Create Perma Link';
+                permaLinkButton.disabled = false;
+            }
+        }
+
+        async function deleteFile() {
+            const fileId = deleteFileButton.dataset.fileId;
+
+            const { data, error } = await supabase
+                .from('shared_files')
+                .select('is_permanent, custom_file_id, permanent_link_id')
+                .eq('file_id', fileId)
+                .single();
+            
+            if (error || !data) {
+                alert('File not found or an error occurred.');
+                return;
+            }
+
+            if (data.is_permanent) {
+                alert('This file is a permanent link and cannot be deleted.');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete this file permanently? This action cannot be undone.`)) {
+                return;
+            }
+
+            deleteFileButton.innerText = 'Deleting...';
+            deleteFileButton.disabled = true;
+
+            try {
+                const { error: dbError } = await supabase
+                    .from('shared_files')
+                    .delete()
+                    .eq('file_id', fileId);
+
+                if (dbError) {
+                    throw dbError;
+                }
+
+                const { error: storageError } = await supabase.storage
+                    .from('files')
+                    .remove([fileId]);
+
+                if (storageError) {
+                    throw storageError;
+                }
+
+                let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
+                ownedFiles = ownedFiles.filter(id => id !== fileId);
+                localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
+
+                alert('File deleted successfully!');
+                window.location.href = SHARE_BASE_URL;
+
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert(`Error deleting file: ${error.message}`);
+                deleteFileButton.innerText = 'Delete File';
+                deleteFileButton.disabled = false;
+            }
+        }
+
+        function copyLink() {
+            navigator.clipboard.writeText(shareableLinkDiv.innerText).then(() => {
+                alert('Link copied to clipboard!');
+            });
+        }
+        
+        function goToLink() {
+            window.location.href = shareableLinkDiv.innerText;
+        }
+        
+        function goToPermanentLink() {
+            window.location.href = permanentLinkDisplay.innerText;
+        }
+
+        uploadForm.addEventListener('submit', handleUpload);
+        window.addEventListener('DOMContentLoaded', handleFileView);
+    </script>
+</body>
+</html>
