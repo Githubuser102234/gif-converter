@@ -214,13 +214,11 @@
 
             uploadStatus.innerText = 'Uploading...';
 
-            // Generate a UUID for the file
             const fileId = self.crypto.randomUUID();
             const expirationSeconds = parseInt(expirationSelect.value, 10);
             const uploadTime = new Date().toISOString();
 
             try {
-                // Upload file to Supabase Storage with the UUID as the filename
                 const { error: uploadError } = await supabase.storage
                     .from('files')
                     .upload(fileId, file);
@@ -229,8 +227,7 @@
                     throw uploadError;
                 }
 
-                // Insert into shared_files table with the file name
-                const { data, error: dbError } = await supabase
+                const { error: dbError } = await supabase
                     .from('shared_files')
                     .insert([
                         {
@@ -245,7 +242,6 @@
                     throw dbError;
                 }
                 
-                // Save ownership to local storage
                 let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                 ownedFiles.push(fileId);
                 localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
@@ -264,44 +260,61 @@
 
         async function handleFileView() {
             const urlParams = new URLSearchParams(window.location.search);
-            const fileId = urlParams.get('fileid');
+            const fileIdParam = urlParams.get('fileid');
+            const fileId = fileIdParam;
+            let fileData = null;
 
             if (fileId) {
                 uploaderSection.classList.add('hidden');
                 viewerSection.classList.remove('hidden');
 
                 try {
+                    // Try to fetch file by primary key (file_id)
                     const { data, error } = await supabase
                         .from('shared_files')
                         .select('*')
                         .eq('file_id', fileId)
                         .single();
 
-                    if (error || !data || (!data.is_permanent && new Date(data.expires_at) < new Date())) {
+                    if (!data) {
+                        // If not found by primary key, try to fetch by permanent_link_id
+                        const { data: permaData, error: permaError } = await supabase
+                            .from('shared_files')
+                            .select('*')
+                            .eq('permanent_link_id', fileId)
+                            .single();
+                        
+                        fileData = permaData;
+                        if (permaError) throw permaError;
+                    } else {
+                        fileData = data;
+                    }
+
+                    if (!fileData || (!fileData.is_permanent && new Date(fileData.expires_at) < new Date())) {
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
 
                     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
-                        .createSignedUrl(fileId, 60);
+                        .createSignedUrl(fileData.file_id, 60);
 
                     if (signedUrlError) {
                         throw signedUrlError;
                     }
 
                     const signedUrl = signedUrlData.signedUrl;
-                    const fileName = data.file_name;
+                    const fileName = fileData.file_name;
 
                     viewerFilenameH2.innerText = `File: ${fileName}`;
-                    viewerUploadedSpan.innerText = new Date(data.created_at).toLocaleString();
+                    viewerUploadedSpan.innerText = new Date(fileData.created_at).toLocaleString();
                     
-                    if (data.is_permanent) {
+                    if (fileData.is_permanent) {
                         expirationInfo.classList.add('hidden');
                         permaLinkButton.classList.add('hidden');
                     } else {
                         expirationInfo.classList.remove('hidden');
-                        viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
+                        viewerExpiresSpan.innerText = new Date(fileData.expires_at).toLocaleString();
                     }
 
                     const fileExtension = fileName.split('.').pop().toLowerCase();
@@ -324,13 +337,14 @@
                     fileViewerDiv.innerHTML = mediaElement;
 
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
+                    const originalFileId = fileData.file_id;
 
-                    if (ownedFiles.includes(fileId)) {
+                    if (ownedFiles.includes(originalFileId)) {
                         deleteFileButton.classList.remove('hidden');
-                        deleteFileButton.dataset.fileId = fileId;
-                        if (!data.is_permanent) {
+                        deleteFileButton.dataset.fileId = originalFileId;
+                        if (!fileData.is_permanent) {
                             permaLinkButton.classList.remove('hidden');
-                            permaLinkButton.dataset.fileId = fileId;
+                            permaLinkButton.dataset.fileId = originalFileId;
                         } else {
                             permaLinkButton.classList.add('hidden');
                         }
@@ -347,28 +361,29 @@
         }
 
         async function createPermaLink() {
-            const fileId = permaLinkButton.dataset.fileId;
-            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and undeletable for everyone.')) {
+            const originalFileId = permaLinkButton.dataset.fileId;
+            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and undeletable.')) {
                 return;
             }
 
             permaLinkButton.innerText = 'Creating...';
             permaLinkButton.disabled = true;
+            
+            const newPermaId = self.crypto.randomUUID();
 
             try {
                 const { error: updateError } = await supabase
                     .from('shared_files')
-                    .update({ expires_at: null, is_permanent: true })
-                    .eq('file_id', fileId);
+                    .update({ expires_at: null, is_permanent: true, permanent_link_id: newPermaId })
+                    .eq('file_id', originalFileId);
 
                 if (updateError) {
                     throw updateError;
                 }
-                
-                // No need to update local storage, as the fileId remains the same.
-                
+
                 alert('Permanent link created successfully!');
-                window.location.reload();
+                const permaLink = `${SHARE_BASE_URL}?fileid=${newPermaId}`;
+                window.location.href = permaLink;
 
             } catch (error) {
                 console.error('Perma link creation error:', error);
@@ -381,7 +396,6 @@
         async function deleteFile() {
             const fileId = deleteFileButton.dataset.fileId;
 
-            // Fetch the file details to check if it's permanent
             const { data, error } = await supabase
                 .from('shared_files')
                 .select('is_permanent')
@@ -406,7 +420,6 @@
             deleteFileButton.disabled = true;
 
             try {
-                // Delete from shared_files table first
                 const { error: dbError } = await supabase
                     .from('shared_files')
                     .delete()
@@ -416,7 +429,6 @@
                     throw dbError;
                 }
 
-                // Delete from Supabase Storage
                 const { error: storageError } = await supabase.storage
                     .from('files')
                     .remove([fileId]);
@@ -425,7 +437,6 @@
                     throw storageError;
                 }
 
-                // Remove from local storage
                 let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                 ownedFiles = ownedFiles.filter(id => id !== fileId);
                 localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
