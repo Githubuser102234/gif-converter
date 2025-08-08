@@ -129,51 +129,6 @@
             display: block;
         }
 
-        /* Spinner styles */
-        .spinner-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        
-        .spinner {
-            width: 48px;
-            height: 48px;
-            animation: rotate 2s linear infinite;
-        }
-
-        .spinner circle {
-            stroke: #4285f4;
-            stroke-linecap: round;
-            stroke-width: 4;
-            fill: none;
-            stroke-dasharray: 150;
-            stroke-dashoffset: 150;
-            animation: dash 1.5s ease-in-out infinite;
-            transform-origin: 50% 50%;
-        }
-
-        @keyframes rotate {
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-
-        @keyframes dash {
-            0% {
-                stroke-dashoffset: 150;
-            }
-            50% {
-                stroke-dashoffset: 37.5;
-                transform: rotate(45deg);
-            }
-            100% {
-                stroke-dashoffset: 150;
-                transform: rotate(360deg);
-            }
-        }
-
         @media (min-width: 600px) {
             body {
                 padding: 40px;
@@ -182,11 +137,6 @@
     </style>
 </head>
 <body>
-    <div id="loading-spinner" class="spinner-container hidden">
-        <svg class="spinner" viewBox="0 0 50 50" aria-label="Loading" role="img">
-            <circle cx="25" cy="25" r="20"></circle>
-        </svg>
-    </div>
 
     <div class="container" id="uploader">
         <h1>Upload a File</h1>
@@ -252,21 +202,7 @@
         const expirationInfo = document.getElementById('expiration-info');
         const deleteFileButton = document.getElementById('delete-file-button');
         const permaLinkButton = document.getElementById('perma-link-button');
-        const loadingSpinner = document.getElementById('loading-spinner'); // New
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
-
-        function showSpinner() {
-            document.body.style.justifyContent = 'center';
-            document.body.style.alignItems = 'center';
-            document.querySelectorAll('.container').forEach(el => el.classList.add('hidden'));
-            loadingSpinner.classList.remove('hidden');
-        }
-
-        function hideSpinner() {
-            loadingSpinner.classList.add('hidden');
-            document.body.style.justifyContent = '';
-            document.body.style.alignItems = '';
-        }
 
         async function handleUpload(event) {
             event.preventDefault();
@@ -276,9 +212,7 @@
                 return;
             }
 
-            // Show spinner and hide uploader form
-            showSpinner();
-            uploaderSection.classList.add('hidden');
+            uploadStatus.innerText = 'Uploading...';
 
             const fileId = self.crypto.randomUUID();
             const expirationSeconds = parseInt(expirationSelect.value, 10);
@@ -311,15 +245,14 @@
                 let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
                 ownedFiles.push(fileId);
                 localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
-                
-                hideSpinner();
+
+                uploaderSection.classList.add('hidden');
                 sharerSection.classList.remove('hidden');
 
                 const shareLink = `${SHARE_BASE_URL}?fileid=${fileId}`;
                 shareableLinkDiv.innerText = shareLink;
+                uploadStatus.innerText = '';
             } catch (error) {
-                hideSpinner();
-                uploaderSection.classList.remove('hidden');
                 uploadStatus.innerText = `Error: ${error.message}`;
                 console.error('Upload error:', error);
             }
@@ -328,11 +261,12 @@
         async function handleFileView() {
             const urlParams = new URLSearchParams(window.location.search);
             const fileIdParam = urlParams.get('fileid');
+            let fileData = null;
+            let originalFileId = null;
 
             if (fileIdParam) {
-                showSpinner();
-                let fileData = null;
-                let originalFileId = null;
+                uploaderSection.classList.add('hidden');
+                viewerSection.classList.remove('hidden');
 
                 try {
                     let query = supabase.from('shared_files').select('*');
@@ -352,8 +286,6 @@
                     originalFileId = fileData.file_id;
 
                     if (!fileData || (!fileData.is_permanent && new Date(fileData.expires_at) < new Date())) {
-                        hideSpinner();
-                        viewerSection.classList.remove('hidden');
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
@@ -414,14 +346,9 @@
                         deleteFileButton.classList.add('hidden');
                         permaLinkButton.classList.add('hidden');
                     }
-                    
-                    hideSpinner();
-                    viewerSection.classList.remove('hidden');
 
                 } catch (error) {
                     console.error('File view error:', error);
-                    hideSpinner();
-                    viewerSection.classList.remove('hidden');
                     viewerSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file. It may have been deleted or the link is invalid.</p>`;
                 }
             }
