@@ -134,9 +134,71 @@
                 padding: 40px;
             }
         }
+        
+        /* Loading spinner styles */
+        .spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 1000; /* Ensure it's on top of everything */
+        }
+        
+        .spinner {
+            width: 48px;
+            height: 48px;
+            animation: rotate 2s linear infinite;
+            display: block;
+        }
+
+        .spinner circle {
+            stroke: #4285f4; /* Google Blue */
+            stroke-linecap: round;
+            stroke-width: 4;
+            fill: none;
+            stroke-dasharray: 150;
+            stroke-dashoffset: 150;
+            animation: dash 1.5s ease-in-out infinite;
+            transform-origin: 50% 50%;
+        }
+
+        @keyframes rotate {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes dash {
+            0% {
+                stroke-dashoffset: 150;
+            }
+            50% {
+                stroke-dashoffset: 37.5;
+                transform: rotate(45deg);
+            }
+            100% {
+                stroke-dashoffset: 150;
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Hide the main content when loading */
+        body.loading > .container {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <div class="spinner-overlay hidden">
+        <svg class="spinner" viewBox="0 0 50 50" aria-label="Loading" role="img">
+            <circle cx="25" cy="25" r="20"></circle>
+        </svg>
+    </div>
 
     <div class="container" id="uploader">
         <h1>Upload a File</h1>
@@ -202,7 +264,17 @@
         const expirationInfo = document.getElementById('expiration-info');
         const deleteFileButton = document.getElementById('delete-file-button');
         const permaLinkButton = document.getElementById('perma-link-button');
+        const spinnerOverlay = document.querySelector('.spinner-overlay');
+
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
+
+        function showSpinner() {
+            spinnerOverlay.classList.remove('hidden');
+        }
+
+        function hideSpinner() {
+            spinnerOverlay.classList.add('hidden');
+        }
 
         async function handleUpload(event) {
             event.preventDefault();
@@ -212,6 +284,7 @@
                 return;
             }
 
+            showSpinner();
             uploadStatus.innerText = 'Uploading...';
 
             const fileId = self.crypto.randomUUID();
@@ -255,6 +328,8 @@
             } catch (error) {
                 uploadStatus.innerText = `Error: ${error.message}`;
                 console.error('Upload error:', error);
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -265,6 +340,7 @@
             let originalFileId = null;
 
             if (fileIdParam) {
+                showSpinner();
                 uploaderSection.classList.add('hidden');
                 viewerSection.classList.remove('hidden');
 
@@ -350,6 +426,8 @@
                 } catch (error) {
                     console.error('File view error:', error);
                     viewerSection.innerHTML = `<h2>Error</h2><p>An error occurred while retrieving the file. It may have been deleted or the link is invalid.</p>`;
+                } finally {
+                    hideSpinner();
                 }
             }
         }
@@ -362,6 +440,7 @@
 
             permaLinkButton.innerText = 'Creating...';
             permaLinkButton.disabled = true;
+            showSpinner();
             
             const newPermaId = `perm-${self.crypto.randomUUID()}`;
 
@@ -384,6 +463,8 @@
                 alert(`Error creating permanent link: ${error.message}`);
                 permaLinkButton.innerText = 'Create Perma Link';
                 permaLinkButton.disabled = false;
+            } finally {
+                hideSpinner();
             }
         }
 
@@ -412,6 +493,7 @@
 
             deleteFileButton.innerText = 'Deleting...';
             deleteFileButton.disabled = true;
+            showSpinner();
 
             try {
                 const { error: dbError } = await supabase
@@ -443,6 +525,8 @@
                 alert(`Error deleting file: ${error.message}`);
                 deleteFileButton.innerText = 'Delete File';
                 deleteFileButton.disabled = false;
+            } finally {
+                hideSpinner();
             }
         }
 
