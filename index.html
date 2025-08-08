@@ -265,7 +265,6 @@
         async function handleFileView() {
             const urlParams = new URLSearchParams(window.location.search);
             const fileId = urlParams.get('fileid');
-            const isPermaLink = fileId && fileId.startsWith('perm-');
 
             if (fileId) {
                 uploaderSection.classList.add('hidden');
@@ -278,14 +277,14 @@
                         .eq('file_id', fileId)
                         .single();
 
-                    if (error || !data || (!isPermaLink && new Date(data.expires_at) < new Date())) {
+                    if (error || !data || (!data.is_permanent && new Date(data.expires_at) < new Date())) {
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
 
                     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
-                        .createSignedUrl(isPermaLink ? fileId.substring(5) : fileId, 60);
+                        .createSignedUrl(fileId, 60);
 
                     if (signedUrlError) {
                         throw signedUrlError;
@@ -297,9 +296,9 @@
                     viewerFilenameH2.innerText = `File: ${fileName}`;
                     viewerUploadedSpan.innerText = new Date(data.created_at).toLocaleString();
                     
-                    if (isPermaLink) {
+                    if (data.is_permanent) {
                         expirationInfo.classList.add('hidden');
-                        deleteFileButton.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
                     } else {
                         expirationInfo.classList.remove('hidden');
                         viewerExpiresSpan.innerText = new Date(data.expires_at).toLocaleString();
@@ -325,17 +324,16 @@
                     fileViewerDiv.innerHTML = mediaElement;
 
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
-                    const originalFileId = isPermaLink ? fileId.substring(5) : fileId;
 
-                    if (ownedFiles.includes(originalFileId)) {
-                        if (isPermaLink) {
-                            deleteFileButton.classList.remove('hidden');
-                        } else {
-                            deleteFileButton.classList.remove('hidden');
-                            permaLinkButton.classList.remove('hidden');
-                        }
+                    if (ownedFiles.includes(fileId)) {
+                        deleteFileButton.classList.remove('hidden');
                         deleteFileButton.dataset.fileId = fileId;
-                        permaLinkButton.dataset.fileId = fileId;
+                        if (!data.is_permanent) {
+                            permaLinkButton.classList.remove('hidden');
+                            permaLinkButton.dataset.fileId = fileId;
+                        } else {
+                            permaLinkButton.classList.add('hidden');
+                        }
                     } else {
                         deleteFileButton.classList.add('hidden');
                         permaLinkButton.classList.add('hidden');
@@ -350,33 +348,27 @@
 
         async function createPermaLink() {
             const fileId = permaLinkButton.dataset.fileId;
-            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and cannot be undone. It will also not be deletable.')) {
+            if (!confirm('Are you sure you want to create a permanent link? This will make the file permanent and undeletable for everyone.')) {
                 return;
             }
 
             permaLinkButton.innerText = 'Creating...';
             permaLinkButton.disabled = true;
 
-            const newFileId = `perm-${fileId}`;
-
             try {
                 const { error: updateError } = await supabase
                     .from('shared_files')
-                    .update({ expires_at: null, file_id: newFileId })
+                    .update({ expires_at: null, is_permanent: true })
                     .eq('file_id', fileId);
 
                 if (updateError) {
                     throw updateError;
                 }
                 
-                // Update local storage
-                let ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
-                ownedFiles = ownedFiles.filter(id => id !== fileId);
-                ownedFiles.push(newFileId);
-                localStorage.setItem('owned_files', JSON.stringify(ownedFiles));
+                // No need to update local storage, as the fileId remains the same.
                 
                 alert('Permanent link created successfully!');
-                window.location.href = `${SHARE_BASE_URL}?fileid=${newFileId}`;
+                window.location.reload();
 
             } catch (error) {
                 console.error('Perma link creation error:', error);
@@ -388,10 +380,24 @@
 
         async function deleteFile() {
             const fileId = deleteFileButton.dataset.fileId;
-            if (fileId.startsWith('perm-')) {
-                alert('This file is a permanent link and cannot be deleted through this interface. Please contact support.');
+
+            // Fetch the file details to check if it's permanent
+            const { data, error } = await supabase
+                .from('shared_files')
+                .select('is_permanent')
+                .eq('file_id', fileId)
+                .single();
+            
+            if (error || !data) {
+                alert('File not found or an error occurred.');
                 return;
             }
+
+            if (data.is_permanent) {
+                alert('This file is a permanent link and cannot be deleted.');
+                return;
+            }
+
             if (!confirm(`Are you sure you want to delete this file permanently? This action cannot be undone.`)) {
                 return;
             }
