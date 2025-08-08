@@ -83,15 +83,6 @@
         .perma-link-button:hover {
             background-color: #138496;
         }
-        
-        .custom-perma-link-button {
-            background-color: #ffc107;
-            color: #333;
-        }
-        
-        .custom-perma-link-button:hover {
-            background-color: #e0a800;
-        }
 
         .delete-button {
             background-color: #dc3545;
@@ -99,6 +90,26 @@
 
         .delete-button:hover {
             background-color: #c82333;
+        }
+        
+        .custom-perma-link-container {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .custom-perma-link-container input {
+            margin-bottom: 0;
+        }
+        
+        .custom-perma-link-button {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .custom-perma-link-button:hover {
+            background-color: #e0a800;
         }
 
         label {
@@ -120,6 +131,13 @@
             text-align: center;
             margin-top: 15px;
             font-weight: 500;
+        }
+        
+        #custom-perma-link-status {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 5px;
+            color: #dc3545;
         }
 
         a {
@@ -158,10 +176,6 @@
             margin-left: 5px;
             color: #666;
             font-style: italic;
-        }
-        
-        .custom-link-container {
-            margin-bottom: 15px;
         }
 
         @media (min-width: 600px) {
@@ -214,10 +228,10 @@
             <span id="uploaded-time-ago" class="time-ago"></span>
         </div>
         <button id="perma-link-button" class="perma-link-button hidden" onclick="createPermaLink()">Create Perma Link</button>
-        <div id="custom-perma-link-container" class="hidden custom-link-container">
-            <label for="custom-perma-id-input">Custom Perma Link:</label>
-            <input type="text" id="custom-perma-id-input" placeholder="e.g., my-photo-share" maxlength="25">
+        <div id="custom-perma-link-container" class="custom-perma-link-container hidden">
+            <input type="text" id="custom-perma-link-input" placeholder="Custom ID (max 25 chars)" maxlength="25" />
             <button id="custom-perma-link-button" class="custom-perma-link-button" onclick="createCustomPermaLink()">Create Custom Perma Link</button>
+            <p id="custom-perma-link-status"></p>
         </div>
         <button id="delete-file-button" class="delete-button hidden" onclick="deleteFile()">Delete File</button>
     </div>
@@ -254,8 +268,9 @@
         const deleteFileButton = document.getElementById('delete-file-button');
         const permaLinkButton = document.getElementById('perma-link-button');
         const customPermaLinkContainer = document.getElementById('custom-perma-link-container');
-        const customPermaIdInput = document.getElementById('custom-perma-id-input');
+        const customPermaLinkInput = document.getElementById('custom-perma-link-input');
         const customPermaLinkButton = document.getElementById('custom-perma-link-button');
+        const customPermaLinkStatus = document.getElementById('custom-perma-link-status');
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
 
         expirationSelect.addEventListener('change', () => {
@@ -391,28 +406,38 @@
                 try {
                     let query = supabase.from('shared_files').select('*');
 
+                    // Check for both permanent_link_id and the new custom_file_id
                     if (fileIdParam.startsWith('perm-')) {
-                        // This is a permanent link, query by permanent_link_id
                         query = query.eq('permanent_link_id', fileIdParam);
-                    } else if (fileIdParam.includes('-')) {
-                        // Check if it's a custom permalink
-                        query = query.eq('custom_file_id', fileIdParam);
                     } else {
-                        // This is a temporary link, query by file_id
-                        query = query.eq('file_id', fileIdParam);
+                        // Check for the custom ID first
+                        const { data: customData } = await supabase
+                            .from('shared_files')
+                            .select('*')
+                            .eq('custom_file_id', fileIdParam)
+                            .single();
+
+                        if (customData) {
+                            fileData = customData;
+                        } else {
+                            // If no custom ID found, fall back to the standard file_id
+                            query = query.eq('file_id', fileIdParam);
+                        }
                     }
 
-                    const { data, error } = await query.single();
-                    fileData = data;
-                    if (error) throw error;
-                    
-                    originalFileId = fileData.file_id;
+                    // If fileData wasn't found via custom ID, run the query from above
+                    if (!fileData) {
+                        const { data, error } = await query.single();
+                        fileData = data;
+                        if (error) throw error;
+                    }
 
                     if (!fileData || (!fileData.is_permanent && new Date(fileData.expires_at) < new Date())) {
                         viewerSection.innerHTML = `<h2>File Not Found or Expired</h2><p>The file ID is invalid, the file has expired, or it has been deleted.</p>`;
                         return;
                     }
-
+                    
+                    originalFileId = fileData.file_id;
                     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                         .from('files')
                         .createSignedUrl(originalFileId, 60);
@@ -483,6 +508,91 @@
                 }
             }
         }
+        
+        async function checkCustomFileId(customId) {
+            const { data, error } = await supabase
+                .from('shared_files')
+                .select('custom_file_id')
+                .eq('custom_file_id', customId)
+                .single();
+            
+            if (error && error.code === 'PGRST116') {
+                // No rows found, the ID is available
+                return false;
+            } else if (data) {
+                // ID already exists
+                return true;
+            } else {
+                // Other error
+                throw error;
+            }
+        }
+        
+        async function createCustomPermaLink() {
+            const originalFileId = customPermaLinkButton.dataset.fileId;
+            let customId = customPermaLinkInput.value.trim();
+
+            if (!customId) {
+                customPermaLinkStatus.innerText = 'Please enter a custom ID.';
+                return;
+            }
+            
+            // Replace spaces with hyphens
+            customId = customId.replace(/ /g, '-');
+            
+            // Simple validation for max characters and allowed characters
+            if (customId.length > 25) {
+                customPermaLinkStatus.innerText = 'Custom ID cannot be more than 25 characters.';
+                return;
+            }
+            
+            if (!/^[a-zA-Z0-9-]+$/.test(customId)) {
+                customPermaLinkStatus.innerText = 'Custom ID can only contain letters, numbers, and hyphens.';
+                return;
+            }
+
+            customPermaLinkButton.innerText = 'Checking...';
+            customPermaLinkButton.disabled = true;
+            customPermaLinkStatus.innerText = '';
+            
+            try {
+                const isTaken = await checkCustomFileId(customId);
+                if (isTaken) {
+                    customPermaLinkStatus.innerText = 'This custom ID is already in use. Please choose another one.';
+                    customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                    customPermaLinkButton.disabled = false;
+                    return;
+                }
+            } catch (error) {
+                console.error('Check ID error:', error);
+                customPermaLinkStatus.innerText = `Error checking ID: ${error.message}`;
+                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.disabled = false;
+                return;
+            }
+
+            customPermaLinkButton.innerText = 'Creating...';
+
+            try {
+                const { error: updateError } = await supabase
+                    .from('shared_files')
+                    .update({ expires_at: null, is_permanent: true, custom_file_id: customId })
+                    .eq('file_id', originalFileId);
+
+                if (updateError) {
+                    throw updateError;
+                }
+
+                alert('Custom permanent link created successfully!');
+                const customPermaLink = `${SHARE_BASE_URL}?fileid=${customId}`;
+                window.location.href = customPermaLink;
+            } catch (error) {
+                console.error('Custom perma link creation error:', error);
+                customPermaLinkStatus.innerText = `Error creating custom link: ${error.message}`;
+                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.disabled = false;
+            }
+        }
 
         async function createPermaLink() {
             const originalFileId = permaLinkButton.dataset.fileId;
@@ -513,73 +623,6 @@
                 console.error('Perma link creation error:', error);
                 alert(`Error creating permanent link: ${error.message}`);
                 permaLinkButton.innerText = 'Create Perma Link';
-                permaLinkButton.disabled = false;
-            }
-        }
-        
-        async function createCustomPermaLink() {
-            const originalFileId = customPermaLinkButton.dataset.fileId;
-            const customId = customPermaIdInput.value.trim();
-
-            if (!customId) {
-                alert('Please enter a custom ID.');
-                return;
-            }
-            
-            // Format the custom ID: replace spaces with hyphens, enforce max length
-            const formattedCustomId = customId.toLowerCase().replace(/ /g, '-').substring(0, 25);
-            
-            if (!/^[a-z0-9-]+$/.test(formattedCustomId)) {
-                alert('Invalid custom ID. Only letters, numbers, and hyphens are allowed.');
-                return;
-            }
-
-            if (!confirm(`Are you sure you want to create a permanent link with the custom ID "${formattedCustomId}"? This will make the file permanent and undeletable.`)) {
-                return;
-            }
-            
-            customPermaLinkButton.innerText = 'Creating...';
-            customPermaLinkButton.disabled = true;
-            permaLinkButton.disabled = true;
-
-            try {
-                // Check if the custom ID already exists
-                const { data: existingData, error: existingError } = await supabase
-                    .from('shared_files')
-                    .select('id')
-                    .eq('custom_file_id', formattedCustomId)
-                    .single();
-
-                if (existingData) {
-                    alert('This custom ID is already in use. Please choose a different one.');
-                    customPermaLinkButton.innerText = 'Create Custom Perma Link';
-                    customPermaLinkButton.disabled = false;
-                    permaLinkButton.disabled = false;
-                    return;
-                }
-                
-                if (existingError && existingError.code !== 'PGRST116') { // PGRST116 means no rows found
-                    throw existingError;
-                }
-
-                const { error: updateError } = await supabase
-                    .from('shared_files')
-                    .update({ expires_at: null, is_permanent: true, custom_file_id: formattedCustomId })
-                    .eq('file_id', originalFileId);
-
-                if (updateError) {
-                    throw updateError;
-                }
-
-                alert('Custom permanent link created successfully!');
-                const permaLink = `${SHARE_BASE_URL}?fileid=${formattedCustomId}`;
-                window.location.href = permaLink;
-
-            } catch (error) {
-                console.error('Custom perma link creation error:', error);
-                alert(`Error creating custom permanent link: ${error.message}`);
-                customPermaLinkButton.innerText = 'Create Custom Perma Link';
-                customPermaLinkButton.disabled = false;
                 permaLinkButton.disabled = false;
             }
         }
