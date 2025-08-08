@@ -118,7 +118,7 @@
             font-weight: 500;
         }
 
-        #shareable-link {
+        #shareable-link, .permalink-info .link-box, .copy-link-box {
             word-break: break-all;
             background-color: #f0f4f7;
             padding: 12px;
@@ -177,6 +177,33 @@
             color: #666;
             font-style: italic;
         }
+        
+        .permalink-info {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            background-color: #e2f7e4;
+            text-align: center;
+        }
+        
+        .permalink-info h3 {
+            color: #218838;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .permalink-info .link-box {
+            margin: 10px 0;
+            background-color: #fff;
+            border: 1px solid #ddd;
+        }
+        
+        .permalink-info button {
+            width: auto;
+            display: inline-block;
+            padding: 10px 20px;
+        }
 
         @media (min-width: 600px) {
             body {
@@ -221,16 +248,26 @@
 
     <div class="container hidden" id="viewer">
         <h2 id="viewer-filename">File Information</h2>
+        <div class="permalink-info hidden" id="permalink-message">
+            <h3>This file has been turned into a permanent link.</h3>
+            <div class="link-box" id="permanent-link-display"></div>
+            <button class="go-to-link-button" onclick="goToPermanentLink()">Go to Link</button>
+        </div>
         <div id="file-viewer"></div>
         <p id="expiration-info"><strong>Expires At:</strong> <span id="viewer-expires"></span></p>
         <div class="uploaded-info">
             <p><strong>Uploaded At:</strong> <span id="viewer-uploaded"></span></p>
             <span id="uploaded-time-ago" class="time-ago"></span>
         </div>
+        <div id="link-options">
+            <div id="file-link-box" class="copy-link-box"></div>
+            <button id="copy-viewer-link" onclick="copyViewerLink()">Copy Link</button>
+            <button id="go-to-uploader" class="go-to-link-button" onclick="goToUploader()">Go to file uploader</button>
+        </div>
         <button id="perma-link-button" class="perma-link-button hidden" onclick="createPermaLink()">Create Perma Link</button>
         <div id="custom-perma-link-container" class="custom-perma-link-container hidden">
             <input type="text" id="custom-perma-link-input" placeholder="Custom ID (max 25 chars)" maxlength="25" />
-            <button id="custom-perma-link-button" class="custom-perma-link-button" onclick="createCustomPermaLink()">Create Custom Perma Link</button>
+            <button id="custom-perma-link-button" class="custom-perma-link-button" onclick="createCustomPermaLink()">Make Custom Perma Link</button>
             <p id="custom-perma-link-status"></p>
         </div>
         <button id="delete-file-button" class="delete-button hidden" onclick="deleteFile()">Delete File</button>
@@ -271,6 +308,10 @@
         const customPermaLinkInput = document.getElementById('custom-perma-link-input');
         const customPermaLinkButton = document.getElementById('custom-perma-link-button');
         const customPermaLinkStatus = document.getElementById('custom-perma-link-status');
+        const permalinkMessage = document.getElementById('permalink-message');
+        const permanentLinkDisplay = document.getElementById('permanent-link-display');
+        const fileLinkBox = document.getElementById('file-link-box');
+        const goUploaderButton = document.getElementById('go-to-uploader');
         const SHARE_BASE_URL = 'https://githubuser102234.github.io/gif-converter/';
 
         expirationSelect.addEventListener('change', () => {
@@ -402,6 +443,7 @@
             if (fileIdParam) {
                 uploaderSection.classList.add('hidden');
                 viewerSection.classList.remove('hidden');
+                goUploaderButton.classList.remove('hidden');
 
                 try {
                     let query = supabase.from('shared_files').select('*');
@@ -448,11 +490,30 @@
 
                     const signedUrl = signedUrlData.signedUrl;
                     const fileName = fileData.file_name;
-
+                    const currentLink = window.location.href;
+                    
+                    fileLinkBox.innerText = currentLink;
+                    
                     viewerFilenameH2.innerText = `File: ${fileName}`;
                     const uploadedDate = new Date(fileData.created_at);
                     viewerUploadedSpan.innerText = uploadedDate.toLocaleString();
                     uploadedTimeAgoSpan.innerText = `• ${formatTimeAgo(uploadedDate)}`;
+                    
+                    // New logic to handle permanent links on the original link
+                    if (fileData.is_permanent && !fileIdParam.startsWith('perm-') && fileIdParam !== fileData.custom_file_id) {
+                        permalinkMessage.classList.remove('hidden');
+                        const permaLink = fileData.custom_file_id ? `${SHARE_BASE_URL}?fileid=${fileData.custom_file_id}` : `${SHARE_BASE_URL}?fileid=${fileData.permanent_link_id}`;
+                        permanentLinkDisplay.innerText = permaLink;
+                        // Hide other elements not relevant for the original link view
+                        expirationInfo.classList.add('hidden');
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.add('hidden'); // Hide the file viewer
+                        return; // Stop further processing to avoid showing the file
+                    } else {
+                        permalinkMessage.classList.add('hidden');
+                        document.getElementById('file-viewer').classList.remove('hidden'); // Show the file viewer
+                    }
 
                     if (fileData.is_permanent) {
                         expirationInfo.classList.add('hidden');
@@ -483,8 +544,9 @@
                     fileViewerDiv.innerHTML = mediaElement;
 
                     const ownedFiles = JSON.parse(localStorage.getItem('owned_files')) || [];
-
-                    if (ownedFiles.includes(originalFileId)) {
+                    const isOwner = ownedFiles.includes(originalFileId);
+                    
+                    if (isOwner) {
                         deleteFileButton.classList.remove('hidden');
                         deleteFileButton.dataset.fileId = originalFileId;
                         if (!fileData.is_permanent) {
@@ -501,6 +563,13 @@
                         permaLinkButton.classList.add('hidden');
                         customPermaLinkContainer.classList.add('hidden');
                     }
+                    
+                    // Hide custom perma link elements if it's already a perma link
+                    if (fileData.is_permanent) {
+                        permaLinkButton.classList.add('hidden');
+                        customPermaLinkContainer.classList.add('hidden');
+                    }
+
 
                 } catch (error) {
                     console.error('File view error:', error);
@@ -559,14 +628,14 @@
                 const isTaken = await checkCustomFileId(customId);
                 if (isTaken) {
                     customPermaLinkStatus.innerText = 'This custom ID is already in use. Please choose another one.';
-                    customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                    customPermaLinkButton.innerText = 'Make Custom Perma Link';
                     customPermaLinkButton.disabled = false;
                     return;
                 }
             } catch (error) {
                 console.error('Check ID error:', error);
                 customPermaLinkStatus.innerText = `Error checking ID: ${error.message}`;
-                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.innerText = 'Make Custom Perma Link';
                 customPermaLinkButton.disabled = false;
                 return;
             }
@@ -589,7 +658,7 @@
             } catch (error) {
                 console.error('Custom perma link creation error:', error);
                 customPermaLinkStatus.innerText = `Error creating custom link: ${error.message}`;
-                customPermaLinkButton.innerText = 'Create Custom Perma Link';
+                customPermaLinkButton.innerText = 'Make Custom Perma Link';
                 customPermaLinkButton.disabled = false;
             }
         }
@@ -632,7 +701,7 @@
 
             const { data, error } = await supabase
                 .from('shared_files')
-                .select('is_permanent')
+                .select('is_permanent, custom_file_id, permanent_link_id')
                 .eq('file_id', fileId)
                 .single();
             
@@ -692,8 +761,22 @@
             });
         }
         
+        function copyViewerLink() {
+            navigator.clipboard.writeText(fileLinkBox.innerText).then(() => {
+                alert('Link copied to clipboard!');
+            });
+        }
+        
         function goToLink() {
             window.location.href = shareableLinkDiv.innerText;
+        }
+        
+        function goToPermanentLink() {
+            window.location.href = permanentLinkDisplay.innerText;
+        }
+        
+        function goToUploader() {
+            window.location.href = SHARE_BASE_URL;
         }
 
         uploadForm.addEventListener('submit', handleUpload);
